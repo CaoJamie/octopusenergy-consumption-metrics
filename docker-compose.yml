@@ -6,6 +6,8 @@ services:
     image: repo/octopus-energy-metrics:latest
     environment:
       - OCTO_API_KEY=$OCTO_API_KEY
+      - RECORD_ELECTRICITY=$RECORD_ELECTRICITY
+      - RECORD_GAS=$RECORD_GAS
       - OCTO_ELECTRIC_MPAN=$OCTO_ELECTRIC_MPAN
       - OCTO_ELECTRIC_SN=$OCTO_ELECTRIC_SN
       - OCTO_GAS_MPRN=$OCTO_GAS_MPRN

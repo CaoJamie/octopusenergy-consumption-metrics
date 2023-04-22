@@ -14,6 +14,8 @@ dotenv.config();
 // Env Vars
 const 
     OCTO_API_KEY = env.get('OCTO_API_KEY').required().asString(),
+    RECORD_ELECTRICITY = env.get('RECORD_ELECTRICITY').required().asBool(),
+    RECORD_GAS = env.get('RECORD_GAS').required().asBool(),
     OCTO_ELECTRIC_SN = env.get('OCTO_ELECTRIC_SN').required().asString(),
     OCTO_ELECTRIC_MPAN = env.get('OCTO_ELECTRIC_MPAN').required().asString(),
     OCTO_GAS_MPRN = env.get('OCTO_GAS_MPRN').required().asString(),
@@ -78,54 +80,58 @@ const boot = async (callback) => {
             console.log(e)
         }
 
+
         // Now we loop over every result given to us from the API and feed that into influxdb
+        if(RECORD_ELECTRICITY){
+            for await ( obj of electricresponse.data.results) {
+                // Here we take the end interval, and convert it into nanoseconds for influxdb as nodejs works with ms, not ns
+                const ts = new Date(obj.interval_end)
+                const nanoDate = toNanoDate(String(ts.valueOf()) + '000000')
 
-        for await ( obj of electricresponse.data.results) {
-            // Here we take the end interval, and convert it into nanoseconds for influxdb as nodejs works with ms, not ns
-            const ts = new Date(obj.interval_end)
-            const nanoDate = toNanoDate(String(ts.valueOf()) + '000000')
-            
-            // work out the consumption and hard set the datapoint's timestamp to the interval_end value from the API
-            let electricpoint = new Point('electricity')
-                .floatField('consumption', Number(obj.consumption))
-                .timestamp(nanoDate)
-            
-            // Same again but for cost mathmatics
-            let electriccost = Number(obj.consumption) * Number(OCTO_ELECTRIC_COST) / 100
-            let electriccostpoint = new Point('electricity_cost')
-                .floatField('price', electriccost)
-                .timestamp(nanoDate)
+                // work out the consumption and hard set the datapoint's timestamp to the interval_end value from the API
+                let electricpoint = new Point('electricity')
+                    .floatField('consumption', Number(obj.consumption))
+                    .timestamp(nanoDate)
 
-            // and then write the points:
-            writeApi.writePoint(electricpoint)
-            writeApi.writePoint(electriccostpoint)
+                // Same again but for cost mathmatics
+                let electriccost = Number(obj.consumption) * Number(OCTO_ELECTRIC_COST) / 100
+                let electriccostpoint = new Point('electricity_cost')
+                    .floatField('price', electriccost)
+                    .timestamp(nanoDate)
+
+                // and then write the points:
+                writeApi.writePoint(electricpoint)
+                writeApi.writePoint(electriccostpoint)
+            }
         }
 
         // Repeat the above but for gas
-        for await (obj of gasresponse.data.results) {
-            const ts = new Date(obj.interval_end)
-            const nanoDate = toNanoDate(String(ts.valueOf()) + '000000')
+        if(RECORD_GAS){
+            for await (obj of gasresponse.data.results) {
+                const ts = new Date(obj.interval_end)
+                const nanoDate = toNanoDate(String(ts.valueOf()) + '000000')
 
-            let gaspoint = new Point('gas')
-                .floatField('consumption', Number(obj.consumption))
+                let gaspoint = new Point('gas')
+                    .floatField('consumption', Number(obj.consumption))
+                    .timestamp(nanoDate)
+
+                let kilowatts = (Number(obj.consumption) * Number(VOLUME_CORRECTION) * Number(CALORIFIC_VALUE)) / Number(JOULES_CONVERSION)
+
+                let gaskwhpoint = new Point('gaskwh')
+                .floatField('consumption_kwh', Number(kilowatts))
                 .timestamp(nanoDate)
 
-            let kilowatts = (Number(obj.consumption) * Number(VOLUME_CORRECTION) * Number(CALORIFIC_VALUE)) / Number(JOULES_CONVERSION)
+                let gascost = Number(kilowatts) * Number(OCTO_GAS_COST) / 100
 
-            let gaskwhpoint = new Point('gaskwh')
-            .floatField('consumption_kwh', Number(kilowatts))
-            .timestamp(nanoDate)
-            
-            let gascost = Number(kilowatts) * Number(OCTO_GAS_COST) / 100
+                let gascostpoint = new Point('gas_cost')
+                    .floatField('price', gascost)
+                    .timestamp(nanoDate)
 
-            let gascostpoint = new Point('gas_cost')
-                .floatField('price', gascost)
-                .timestamp(nanoDate)
+                writeApi.writePoint(gaspoint)
+                writeApi.writePoint(gaskwhpoint)
+                writeApi.writePoint(gascostpoint)
 
-            writeApi.writePoint(gaspoint)
-            writeApi.writePoint(gaskwhpoint)
-            writeApi.writePoint(gascostpoint)
-
+            }
         }
 
         await writeApi
